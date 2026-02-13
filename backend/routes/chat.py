@@ -24,8 +24,11 @@ async def chat_endpoint(request: ChatRequest, service: GeminiService = Depends(g
         logger.error(f"Error in chat endpoint: {error_msg}")
         # Check for common Gemini errors
         if "API_KEY_INVALID" in error_msg:
-            error_msg = "Invalid API Key. Please check your .env file."
-        elif "quota" in error_msg.lower():
-            error_msg = "API Quota exceeded. Please try again later."
+            error_msg = "Invalid API Key. Please check your Render environment variables."
+        elif "quota" in error_msg.lower() or "limit" in error_msg.lower():
+            # Providing more detail to the user
+            error_msg = f"API Quota exceeded or limit reached. Detail: {error_msg}. Please try again in 1 minute."
+        else:
+            error_msg = f"Backend Error: {error_msg}"
         
         raise HTTPException(status_code=500, detail=error_msg)

@@ -8,23 +8,22 @@ load_dotenv()
 
 class GeminiService:
     def __init__(self):
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        if self.api_key:
+            self.api_key = self.api_key.strip()
         self.model = None
 
     def _initialize_model(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
+        if not self.api_key or self.api_key == "YOUR_API_KEY_HERE":
             raise ValueError("GEMINI_API_KEY is missing from environment variables.")
         
-        genai.configure(api_key=api_key)
+        genai.configure(api_key=self.api_key)
         
         try:
-            # We saw this list in your debug screenshot!
-            # We'll try the exact names that Google says are available to you.
             available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            print(f"DEBUG: Found models in account: {available_models}")
+            print(f"DEBUG: Found models: {available_models}")
             
-            # Priority list based on your specific debug output
-            # We'll use the names exactly as they appeared in your screenshot
+            # Using exact names verified from debug endpoint
             targets = [
                 'models/gemini-1.5-flash', 
                 'models/gemini-2.0-flash',
@@ -32,17 +31,11 @@ class GeminiService:
                 'models/gemini-1.5-pro'
             ]
             
-            selected = None
-            for t in targets:
-                if t in available_models:
-                    selected = t
-                    break
-            
+            selected = next((t for t in targets if t in available_models), None)
             if not selected and available_models:
                 selected = available_models[0]
                 
             if not selected:
-                # Absolute fallback if list failed
                 selected = 'models/gemini-1.5-flash'
 
             print(f"DEBUG: Final decision - using {selected}")
@@ -63,18 +56,15 @@ class GeminiService:
                 "parts": [msg.content]
             })
 
-        # Start chat
         chat = self.model.start_chat(history=chat_history)
         
         try:
             response = chat.send_message(user_message)
             return response.text
         except Exception as e:
-            # If it STILL 404s, it's a library/version issue on Render's end
-            # We'll catch it and return a helpful message
             error_str = str(e)
-            if "404" in error_str:
-                return "The AI service is temporarily confused by the model name. Please try refreshing the page or waiting a moment while the server stabilizes."
+            print(f"Gemini API Error: {error_str}")
+            # Re-throw so the route handler can catch it with detail
             raise e
 
 # Singleton instance
