@@ -8,20 +8,42 @@ load_dotenv()
 
 class GeminiService:
     def __init__(self):
-        pass
+        self.model = None
 
-    def _get_model(self):
+    def _initialize_model(self):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key or api_key == "YOUR_API_KEY_HERE":
-            raise ValueError("GEMINI_API_KEY is not set in environment variables.")
+            raise ValueError("GEMINI_API_KEY is missing from environment variables.")
         
         genai.configure(api_key=api_key)
-        # Using a fixed model name that is known to work broadly
-        return genai.GenerativeModel('gemini-1.5-flash')
+        
+        # Try to list models and find one that works
+        try:
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            print(f"Available models: {available_models}")
+            
+            # Priority list of models to try
+            for model_name in ['models/gemini-1.5-flash', 'models/gemini-pro', 'gemini-1.5-flash', 'gemini-pro']:
+                if model_name in available_models or any(model_name in am for am in available_models):
+                    self.model = genai.GenerativeModel(model_name)
+                    print(f"Successfully selected model: {model_name}")
+                    return
+            
+            # If none of our preferred models are found, take the first available one
+            if available_models:
+                self.model = genai.GenerativeModel(available_models[0])
+                print(f"Selected fallback model: {available_models[0]}")
+            else:
+                # Last resort hardcoded
+                self.model = genai.GenerativeModel('gemini-pro')
+        except Exception as e:
+            print(f"Error listing models: {e}. Falling back to gemini-pro.")
+            self.model = genai.GenerativeModel('gemini-pro')
 
     async def get_chat_response(self, user_message: str, history: List[Message]) -> str:
-        model = self._get_model()
-        
+        if not self.model:
+            self._initialize_model()
+            
         chat_history = []
         for msg in history:
             chat_history.append({
@@ -30,7 +52,7 @@ class GeminiService:
             })
 
         # Start chat session
-        chat = model.start_chat(history=chat_history)
+        chat = self.model.start_chat(history=chat_history)
         
         # Send message
         response = chat.send_message(user_message)
