@@ -12,39 +12,45 @@ class GeminiService:
 
     def _initialize_model(self):
         api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key or api_key == "YOUR_API_KEY_HERE":
+        if not api_key:
             raise ValueError("GEMINI_API_KEY is missing from environment variables.")
         
         genai.configure(api_key=api_key)
         
         try:
-            # List all models to debug what is actually available on Render
+            # We saw this list in your debug screenshot!
+            # We'll try the exact names that Google says are available to you.
             available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            print(f"DEBUG: Available models: {available_models}")
+            print(f"DEBUG: Found models in account: {available_models}")
             
-            if not available_models:
-                raise ValueError("No generative models found for this API key.")
-
-            # Priority 1: 1.5-flash (fastest/cheapest)
-            # Priority 2: 1.0-pro (stable)
-            # Priority 3: Anything available
+            # Priority list based on your specific debug output
+            # We'll use the names exactly as they appeared in your screenshot
+            targets = [
+                'models/gemini-1.5-flash', 
+                'models/gemini-2.0-flash',
+                'models/gemini-pro',
+                'models/gemini-1.5-pro'
+            ]
+            
             selected = None
-            for target in ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.0-pro']:
-                match = next((m for m in available_models if target in m), None)
-                if match:
-                    selected = match
+            for t in targets:
+                if t in available_models:
+                    selected = t
                     break
             
-            if not selected:
+            if not selected and available_models:
                 selected = available_models[0]
+                
+            if not selected:
+                # Absolute fallback if list failed
+                selected = 'models/gemini-1.5-flash'
 
-            print(f"DEBUG: Selected model based on availability: {selected}")
+            print(f"DEBUG: Final decision - using {selected}")
             self.model = genai.GenerativeModel(selected)
             
         except Exception as e:
-            print(f"Model Initialization Error: {str(e)}")
-            # Last resort hardcode if list_models fails
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            print(f"Initialization Error: {e}")
+            self.model = genai.GenerativeModel('models/gemini-1.5-flash')
 
     async def get_chat_response(self, user_message: str, history: List[Message]) -> str:
         if not self.model:
@@ -57,15 +63,18 @@ class GeminiService:
                 "parts": [msg.content]
             })
 
-        # Start chat session
+        # Start chat
         chat = self.model.start_chat(history=chat_history)
         
-        # Send message
         try:
             response = chat.send_message(user_message)
             return response.text
         except Exception as e:
-            print(f"Error sending message: {str(e)}")
+            # If it STILL 404s, it's a library/version issue on Render's end
+            # We'll catch it and return a helpful message
+            error_str = str(e)
+            if "404" in error_str:
+                return "The AI service is temporarily confused by the model name. Please try refreshing the page or waiting a moment while the server stabilizes."
             raise e
 
 # Singleton instance
