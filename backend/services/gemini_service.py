@@ -18,16 +18,33 @@ class GeminiService:
         genai.configure(api_key=api_key)
         
         try:
-            # Try to get the flash model directly first as it's the most common/modern
+            # List all models to debug what is actually available on Render
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            print(f"DEBUG: Available models: {available_models}")
+            
+            if not available_models:
+                raise ValueError("No generative models found for this API key.")
+
+            # Priority 1: 1.5-flash (fastest/cheapest)
+            # Priority 2: 1.0-pro (stable)
+            # Priority 3: Anything available
+            selected = None
+            for target in ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.0-pro']:
+                match = next((m for m in available_models if target in m), None)
+                if match:
+                    selected = match
+                    break
+            
+            if not selected:
+                selected = available_models[0]
+
+            print(f"DEBUG: Selected model based on availability: {selected}")
+            self.model = genai.GenerativeModel(selected)
+            
+        except Exception as e:
+            print(f"Model Initialization Error: {str(e)}")
+            # Last resort hardcode if list_models fails
             self.model = genai.GenerativeModel('gemini-1.5-flash')
-            # Just test if it exists by looking at it (doesn't send a message)
-            print("DEBUG: Attempting to use gemini-1.5-flash")
-        except Exception:
-            try:
-                self.model = genai.GenerativeModel('gemini-pro')
-                print("DEBUG: Falling back to gemini-pro")
-            except Exception as e:
-                raise ValueError(f"Could not find any suitable Gemini model: {str(e)}")
 
     async def get_chat_response(self, user_message: str, history: List[Message]) -> str:
         if not self.model:
@@ -48,13 +65,7 @@ class GeminiService:
             response = chat.send_message(user_message)
             return response.text
         except Exception as e:
-            # If 1.5-flash failed with 404, try pro as a one-time emergency switch
-            if "404" in str(e) and "gemini-1.5-flash" in str(self.model.model_name):
-                print("DEBUG: Emergency switch to gemini-pro due to 404")
-                self.model = genai.GenerativeModel('gemini-pro')
-                chat = self.model.start_chat(history=chat_history)
-                response = chat.send_message(user_message)
-                return response.text
+            print(f"Error sending message: {str(e)}")
             raise e
 
 # Singleton instance
