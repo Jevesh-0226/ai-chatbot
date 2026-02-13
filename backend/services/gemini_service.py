@@ -17,28 +17,17 @@ class GeminiService:
         
         genai.configure(api_key=api_key)
         
-        # Try to list models and find one that works
         try:
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            print(f"Available models: {available_models}")
-            
-            # Priority list of models to try
-            for model_name in ['models/gemini-1.5-flash', 'models/gemini-pro', 'gemini-1.5-flash', 'gemini-pro']:
-                if model_name in available_models or any(model_name in am for am in available_models):
-                    self.model = genai.GenerativeModel(model_name)
-                    print(f"Successfully selected model: {model_name}")
-                    return
-            
-            # If none of our preferred models are found, take the first available one
-            if available_models:
-                self.model = genai.GenerativeModel(available_models[0])
-                print(f"Selected fallback model: {available_models[0]}")
-            else:
-                # Last resort hardcoded
+            # Try to get the flash model directly first as it's the most common/modern
+            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            # Just test if it exists by looking at it (doesn't send a message)
+            print("DEBUG: Attempting to use gemini-1.5-flash")
+        except Exception:
+            try:
                 self.model = genai.GenerativeModel('gemini-pro')
-        except Exception as e:
-            print(f"Error listing models: {e}. Falling back to gemini-pro.")
-            self.model = genai.GenerativeModel('gemini-pro')
+                print("DEBUG: Falling back to gemini-pro")
+            except Exception as e:
+                raise ValueError(f"Could not find any suitable Gemini model: {str(e)}")
 
     async def get_chat_response(self, user_message: str, history: List[Message]) -> str:
         if not self.model:
@@ -55,12 +44,18 @@ class GeminiService:
         chat = self.model.start_chat(history=chat_history)
         
         # Send message
-        response = chat.send_message(user_message)
-        
-        if not response or not response.text:
-            return "The AI returned an empty response. Please try again."
-            
-        return response.text
+        try:
+            response = chat.send_message(user_message)
+            return response.text
+        except Exception as e:
+            # If 1.5-flash failed with 404, try pro as a one-time emergency switch
+            if "404" in str(e) and "gemini-1.5-flash" in str(self.model.model_name):
+                print("DEBUG: Emergency switch to gemini-pro due to 404")
+                self.model = genai.GenerativeModel('gemini-pro')
+                chat = self.model.start_chat(history=chat_history)
+                response = chat.send_message(user_message)
+                return response.text
+            raise e
 
 # Singleton instance
 gemini_service = None
