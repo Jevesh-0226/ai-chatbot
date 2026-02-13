@@ -8,31 +8,20 @@ load_dotenv()
 
 class GeminiService:
     def __init__(self):
-        self.api_key = os.getenv("GEMINI_API_KEY")
-        self.model = None
-        if self.api_key and self.api_key != "YOUR_API_KEY_HERE":
-            genai.configure(api_key=self.api_key)
-            self._initialize_model()
+        pass
 
-    def _initialize_model(self):
-        try:
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            preferred_models = ['models/gemini-1.5-flash', 'models/gemini-pro']
-            selected_model = next((pm for pm in preferred_models if pm in available_models), available_models[0] if available_models else 'models/gemini-pro')
-            self.model = genai.GenerativeModel(selected_model)
-            print(f"DEBUG: Selected model: {selected_model}")
-        except Exception as e:
-            print(f"Error initializing model: {e}")
+    def _get_model(self):
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key or api_key == "YOUR_API_KEY_HERE":
+            raise ValueError("GEMINI_API_KEY is not set in environment variables.")
+        
+        genai.configure(api_key=api_key)
+        # Using a fixed model name that is known to work broadly
+        return genai.GenerativeModel('gemini-1.5-flash')
 
     async def get_chat_response(self, user_message: str, history: List[Message]) -> str:
-        if not self.api_key or self.api_key == "YOUR_API_KEY_HERE":
-            raise ValueError("GEMINI_API_KEY is missing. Please set it in your Render environment variables.")
-        if not self.model:
-            self._initialize_model()
-            if not self.model:
-                raise ValueError("Could not initialize Gemini model. Check your API key and permissions.")
-
-        # Convert our message format to Gemini's format
+        model = self._get_model()
+        
         chat_history = []
         for msg in history:
             chat_history.append({
@@ -40,12 +29,15 @@ class GeminiService:
                 "parts": [msg.content]
             })
 
-        # Start a chat session with history
-        chat = self.model.start_chat(history=chat_history)
+        # Start chat session
+        chat = model.start_chat(history=chat_history)
         
-        # Send the user message
+        # Send message
         response = chat.send_message(user_message)
         
+        if not response or not response.text:
+            return "The AI returned an empty response. Please try again."
+            
         return response.text
 
 # Singleton instance

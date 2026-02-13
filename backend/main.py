@@ -4,15 +4,11 @@ from routes import chat
 import uvicorn
 import logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 
-app = FastAPI(title="AI Chatbot API")
+app = FastAPI()
 
-# Configure CORS
+# Wide open CORS for troubleshooting
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,12 +17,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
 app.include_router(chat.router, prefix="/api")
 
 @app.get("/")
 async def root():
     return {"message": "AI Chatbot API is running"}
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    import os
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
