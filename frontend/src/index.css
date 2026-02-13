@@ -1,0 +1,5 @@
+/* CSS reset and global styles moved to App.css or handled here */
+body {
+  margin: 0;
+  padding: 0;
+}
