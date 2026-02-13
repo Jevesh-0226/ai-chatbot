@@ -39,7 +39,7 @@ function App() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('https://ai-chatbot-0l8g.onrender.com', {
+      const response = await fetch('https://ai-chatbot-0l8g.onrender.com/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
