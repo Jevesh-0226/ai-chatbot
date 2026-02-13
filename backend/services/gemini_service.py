@@ -14,37 +14,43 @@ class GeminiService:
         self.model = None
         self.current_model_name = None
 
-    def _initialize_model(self, force_fallback=False):
+    def _initialize_model(self):
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY is missing.")
         
         genai.configure(api_key=self.api_key)
         
         try:
-            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-            print(f"DEBUG: Available models: {available_models}")
+            # 1. Get ALL models
+            raw_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
             
-            # Prioritize 1.5-flash and Pro, as 2.0-flash is currently showing limit: 0 for this account
+            # 2. STRICTLY EXCLUDE anything with "2.0" because it has a 0 quota for this account
+            available_models = [m for m in raw_models if "2.0" not in m]
+            print(f"DEBUG: Raw models: {raw_models}")
+            print(f"DEBUG: Available models (Excluded 2.0): {available_models}")
+            
+            # 3. Priority list of stable models
             targets = [
                 'models/gemini-1.5-flash',
                 'models/gemini-pro',
-                'models/gemini-1.5-pro',
-                'models/gemini-2.0-flash-lite',
-                'models/gemini-2.0-flash' # Moved to last because of the 'limit: 0' error
+                'models/gemini-1.5-pro'
             ]
             
-            # If we are forcing a fallback, remove the current failing model from the list
-            if force_fallback and self.current_model_name in targets:
-                targets.remove(self.current_model_name)
-
-            selected = next((t for t in targets if t in available_models), available_models[0] if available_models else 'models/gemini-1.5-flash')
+            selected = next((t for t in targets if t in available_models), None)
             
-            print(f"DEBUG: Selecting model: {selected}")
+            if not selected and available_models:
+                selected = available_models[0]
+                
+            if not selected:
+                # Absolute fallback to the most stable known name
+                selected = 'models/gemini-1.5-flash'
+
+            print(f"DEBUG: Final Decision - Using model: {selected}")
             self.model = genai.GenerativeModel(selected)
             self.current_model_name = selected
             
         except Exception as e:
-            print(f"Initialization Error: {e}")
+            print(f"Selection Error: {e}. Falling back to 1.5-flash.")
             self.model = genai.GenerativeModel('models/gemini-1.5-flash')
             self.current_model_name = 'models/gemini-1.5-flash'
 
@@ -52,9 +58,6 @@ class GeminiService:
         if not self.model:
             self._initialize_model()
             
-        return await self._send_with_retry(user_message, history)
-
-    async def _send_with_retry(self, user_message, history, retries=1):
         chat_history = []
         for msg in history:
             chat_history.append({
@@ -67,14 +70,18 @@ class GeminiService:
             response = chat.send_message(user_message)
             return response.text
         except Exception as e:
-            error_str = str(e).lower()
-            # If we hit a quota or "limit: 0" error, try to switch models immediately
-            if ("quota" in error_str or "limit" in error_str or "429" in error_str) and retries > 0:
-                print(f"DEBUG: Quota/Limit hit on {self.current_model_name}. Attempting fallback...")
-                self._initialize_model(force_fallback=True)
-                return await self._send_with_retry(user_message, history, retries - 1)
+            error_msg = str(e)
+            print(f"Runtime Error with {self.current_model_name}: {error_msg}")
             
-            print(f"Gemini API Error: {str(e)}")
+            # If the current model fails with a quota/limit error, try ONE emergency fallback to a different model
+            if "quota" in error_msg.lower() or "limit" in error_msg.lower() or "429" in error_msg:
+                print("DEBUG: Quota hit. Attempting emergency switch to next available non-2.0 model...")
+                # Re-initialize skipping the current failing one
+                self._initialize_model() 
+                chat = self.model.start_chat(history=chat_history)
+                response = chat.send_message(user_message)
+                return response.text
+            
             raise e
 
 # Singleton instance
