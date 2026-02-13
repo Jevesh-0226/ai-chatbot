@@ -8,40 +8,31 @@ load_dotenv()
 
 class GeminiService:
     def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key or api_key == "YOUR_API_KEY_HERE":
-            print("ERROR: GEMINI_API_KEY is not set correctly in .env")
-            raise ValueError("GEMINI_API_KEY not found or default value used")
-        
-        print(f"Gemini service initialized successfully using key starting with: {api_key[:4]}...")
-        
-        genai.configure(api_key=api_key)
-        
-        # List available models to find a valid one
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        print(f"Available models: {available_models}")
-        
-        # Try to find a preferred model
-        preferred_models = ['models/gemini-1.5-flash', 'models/gemini-1.5-flash-latest', 'models/gemini-pro']
-        selected_model = None
-        
-        for pm in preferred_models:
-            if pm in available_models:
-                selected_model = pm
-                break
-        
-        if not selected_model and available_models:
-            selected_model = available_models[0]
-            
-        if not selected_model:
-            raise ValueError("No generative models found for this API key.")
-            
-        print(f"DEBUG: Successfully selected model: {selected_model}")
-        self.model = genai.GenerativeModel(selected_model)
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        self.model = None
+        if self.api_key and self.api_key != "YOUR_API_KEY_HERE":
+            genai.configure(api_key=self.api_key)
+            self._initialize_model()
+
+    def _initialize_model(self):
+        try:
+            available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+            preferred_models = ['models/gemini-1.5-flash', 'models/gemini-pro']
+            selected_model = next((pm for pm in preferred_models if pm in available_models), available_models[0] if available_models else 'models/gemini-pro')
+            self.model = genai.GenerativeModel(selected_model)
+            print(f"DEBUG: Selected model: {selected_model}")
+        except Exception as e:
+            print(f"Error initializing model: {e}")
 
     async def get_chat_response(self, user_message: str, history: List[Message]) -> str:
+        if not self.api_key or self.api_key == "YOUR_API_KEY_HERE":
+            raise ValueError("GEMINI_API_KEY is missing. Please set it in your Render environment variables.")
+        if not self.model:
+            self._initialize_model()
+            if not self.model:
+                raise ValueError("Could not initialize Gemini model. Check your API key and permissions.")
+
         # Convert our message format to Gemini's format
-        # Gemini expects 'user' and 'model' roles (not 'assistant')
         chat_history = []
         for msg in history:
             chat_history.append({
