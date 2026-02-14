@@ -121,7 +121,6 @@ const ChatPage = () => {
         // Update active ID
         if (updatedChats.length === 0) {
             // If no chats left, create a new one immediately
-            // We use setTimeout to allow state update to process first/avoid conflicts
             setTimeout(createNewChat, 0);
         } else if (id === activeChatId) {
             setActiveChatId(nextActiveId);
@@ -189,14 +188,24 @@ const ChatPage = () => {
             setChats(prev => prev.map(chat => {
                 if (chat.id === currentChatId) {
                     // Update title if it's the first message
-                    const newTitle = chat.messages.length === 0
+                    const newTitle = chat.messages.length === 1 // Wait, userMessage was added. So length is 1?
+                        ? input.substring(0, 30) + (input.length > 30 ? '...' : '')
+                        : chat.title;
+                    // Actually title update logic is fragile if message count changes.
+                    // If length === 1 (just the user message we added optimistically), update title.
+                    // But here "chat.messages" refers to the PREVIOUS state + optimistic update applied? 
+                    // Ideally check if title is default "New Chat"
+
+                    // Check if title is default
+                    const isDefaultTitle = chat.title === 'New Chat';
+                    const updatedTitle = isDefaultTitle
                         ? input.substring(0, 30) + (input.length > 30 ? '...' : '')
                         : chat.title;
 
                     return {
                         ...chat,
-                        title: newTitle,
-                        messages: [...chat.messages, userMessage, aiMessage]
+                        title: updatedTitle,
+                        messages: [...chat.messages, aiMessage] // FIXED: Only append aiMessage
                     };
                 }
                 return chat;
