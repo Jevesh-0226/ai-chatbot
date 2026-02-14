@@ -2,45 +2,118 @@ import React, { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import ChatContainer from '../components/ChatContainer';
 import ChatInput from '../components/ChatInput';
+import Sidebar from '../components/Sidebar';
 
 /**
  * ChatPage Component
- * Main chat interface page
- * Manages chat state, API calls, and theme
+ * Main controller for the chat application
+ * Manages state for chats, messages, sidebar, and API interactions
  */
 const ChatPage = () => {
-    const [messages, setMessages] = useState([]);
+    // State
+    const [chats, setChats] = useState([]);
+    const [activeChatId, setActiveChatId] = useState(null);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [theme, setTheme] = useState('light');
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+
     const messagesEndRef = useRef(null);
 
-    // Auto-scroll to bottom when new messages arrive
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
+    // Initialize from LocalStorage
+    useEffect(() => {
+        const storedChats = localStorage.getItem('gemini_chats');
+        const storedTheme = localStorage.getItem('gemini_theme');
+
+        if (storedTheme) setTheme(storedTheme);
+
+        if (storedChats) {
+            try {
+                const parsedChats = JSON.parse(storedChats);
+                // Ensure all historical messages are NOT streaming
+                const sanitizedChats = parsedChats.map(chat => ({
+                    ...chat,
+                    messages: chat.messages.map(msg => ({ ...msg, isStreaming: false }))
+                }));
+                setChats(sanitizedChats);
+                if (sanitizedChats.length > 0) {
+                    setActiveChatId(sanitizedChats[0].id);
+                } else {
+                    createNewChat();
+                }
+            } catch (e) {
+                console.error('Failed to parse chats:', e);
+                createNewChat();
+            }
+        } else {
+            createNewChat();
+        }
+    }, []);
+
+    // Sync to LocalStorage
+    useEffect(() => {
+        if (chats.length > 0) {
+            localStorage.setItem('gemini_chats', JSON.stringify(chats));
+        }
+    }, [chats]);
 
     useEffect(() => {
-        scrollToBottom();
-    }, [messages, isLoading]);
-
-    // Apply theme to document
-    useEffect(() => {
+        localStorage.setItem('gemini_theme', theme);
         document.documentElement.setAttribute('data-theme', theme);
     }, [theme]);
 
-    const toggleTheme = () => {
-        setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
+    // Derive active chat
+    const activeChat = chats.find(c => c.id === activeChatId);
+    const messages = activeChat ? activeChat.messages : [];
+
+    // Scroll to bottom when messages change or loading state changes
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages.length, isLoading, activeChatId]);
+
+    // Actions
+    const createNewChat = () => {
+        const newChat = {
+            id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+            title: 'New Chat',
+            messages: [],
+            createdAt: new Date().toISOString()
+        };
+        setChats(prev => [newChat, ...prev]);
+        setActiveChatId(newChat.id);
+        setSidebarOpen(false); // Close sidebar on mobile
     };
 
-    const clearChat = () => {
-        setMessages([]);
+    const handleSelectChat = (id) => {
+        if (id === activeChatId) return;
+
+        // Disable streaming on current chat messages before switching
+        setChats(prev => prev.map(chat => {
+            if (chat.id === activeChatId) {
+                return {
+                    ...chat,
+                    messages: chat.messages.map(msg => ({ ...msg, isStreaming: false }))
+                };
+            }
+            return chat;
+        }));
+
+        setActiveChatId(id);
+        setSidebarOpen(false); // Close mobile sidebar
     };
 
-    // Handle sending messages to API
+    const clearCurrentChat = () => {
+        setChats(prev => prev.map(chat =>
+            chat.id === activeChatId ? { ...chat, messages: [] } : chat
+        ));
+    };
+
     const handleSend = async (e) => {
         e.preventDefault();
         if (!input.trim() || isLoading) return;
+
+        // Capture curent ID to ensure response goes to correct chat even if user switches
+        const currentChatId = activeChatId;
 
         const userMessage = {
             role: 'user',
@@ -48,12 +121,21 @@ const ChatPage = () => {
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
 
-        setMessages(prev => [...prev, userMessage]);
+        // Optimistically update UI
+        setChats(prev => prev.map(chat => {
+            if (chat.id === currentChatId) {
+                return {
+                    ...chat,
+                    messages: [...chat.messages, userMessage]
+                };
+            }
+            return chat;
+        }));
+
         setInput('');
         setIsLoading(true);
 
         try {
-            // API call - DO NOT MODIFY THIS SECTION
             const response = await fetch('https://ai-chatbot-0l8g.onrender.com/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -66,52 +148,87 @@ const ChatPage = () => {
                 })
             });
 
-            if (!response.ok) {
-                const errorBody = await response.json().catch(() => ({ detail: 'API Error' }));
-                throw new Error(errorBody.detail || 'API Error');
-            }
+            if (!response.ok) throw new Error('API Error');
 
             const data = await response.json();
 
             const aiMessage = {
                 role: 'ai',
                 content: data.response,
-                timestamp: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                timestamp: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                isStreaming: true // Enable streaming effect
             };
 
-            setMessages(prev => [...prev, aiMessage]);
+            // Add AI message
+            setChats(prev => prev.map(chat => {
+                if (chat.id === currentChatId) {
+                    // Update title if it's the first message
+                    const newTitle = chat.messages.length === 0
+                        ? input.substring(0, 30) + (input.length > 30 ? '...' : '')
+                        : chat.title;
+
+                    return {
+                        ...chat,
+                        title: newTitle,
+                        messages: [...chat.messages, userMessage, aiMessage]
+                    };
+                }
+                return chat;
+            }));
+
         } catch (error) {
-            console.error('Error:', error);
-            setMessages(prev => [...prev, {
+            console.error(error);
+            const errorMessage = {
                 role: 'ai',
-                content: `Error: ${error.message}. Please check your backend terminal for error logs and verify your API key.`,
-                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }]);
+                content: "Sorry, I couldn't reach the server. Please try again.",
+                timestamp: new Date().toLocaleTimeString(),
+                isStreaming: false
+            };
+            setChats(prev => prev.map(chat =>
+                chat.id === currentChatId
+                    ? { ...chat, messages: [...chat.messages, errorMessage] }
+                    : chat
+            ));
         } finally {
             setIsLoading(false);
         }
     };
 
     return (
-        <div className="app-container">
-            <Header
+        <div className="app-layout">
+            {/* Sidebar Area */}
+            <Sidebar
+                chats={chats}
+                activeChatId={activeChatId}
+                onSelectChat={handleSelectChat}
+                onNewChat={createNewChat}
+                isOpen={sidebarOpen}
+                onClose={() => setSidebarOpen(false)}
                 theme={theme}
-                onToggleTheme={toggleTheme}
-                onClearChat={clearChat}
             />
 
-            <ChatContainer
-                messages={messages}
-                isLoading={isLoading}
-                messagesEndRef={messagesEndRef}
-            />
+            {/* Main Chat Area */}
+            <div className="main-content">
+                <Header
+                    theme={theme}
+                    onToggleTheme={() => setTheme(prev => prev === 'light' ? 'dark' : 'light')}
+                    onClearChat={clearCurrentChat}
+                    onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+                />
 
-            <ChatInput
-                input={input}
-                onInputChange={setInput}
-                onSend={handleSend}
-                isLoading={isLoading}
-            />
+                <ChatContainer
+                    messages={messages}
+                    isLoading={isLoading}
+                    messagesEndRef={messagesEndRef}
+                />
+
+                <ChatInput
+                    input={input}
+                    onInputChange={setInput}
+                    onSend={handleSend}
+                    isLoading={isLoading}
+                />
+            </div>
         </div>
     );
 };

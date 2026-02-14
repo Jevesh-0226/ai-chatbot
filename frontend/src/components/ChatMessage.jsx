@@ -1,12 +1,46 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 /**
  * ChatMessage Component
  * Renders individual chat messages with role-based styling
- * @param {Object} message - Message object containing role, content, and timestamp
+ * Implements streaming typewriter effect for AI responses
  */
-const ChatMessage = ({ message }) => {
-    const { role, content, timestamp } = message;
+const ChatMessage = ({ message, isLast, onStreamingComplete }) => {
+    const { role, content, timestamp, isStreaming } = message;
+    const [displayedContent, setDisplayedContent] = useState('');
+    const intervalRef = useRef(null);
+
+    useEffect(() => {
+        // If it's an AI message marked for streaming
+        if (role === 'ai' && isStreaming) {
+            setDisplayedContent('');
+            let index = 0;
+
+            // Calculate typing speed based on content length
+            // Start fast, maybe vary slightly for realism
+            const speed = Math.max(10, Math.min(30, 1500 / content.length));
+
+            intervalRef.current = setInterval(() => {
+                if (index < content.length) {
+                    setDisplayedContent((prev) => prev + content.charAt(index));
+                    index++;
+                } else {
+                    clearInterval(intervalRef.current);
+                    if (onStreamingComplete) onStreamingComplete();
+                }
+            }, speed);
+
+            return () => {
+                if (intervalRef.current) clearInterval(intervalRef.current);
+            };
+        } else {
+            // Just display full content immediately for:
+            // 1. User messages
+            // 2. Old AI messages (not isStreaming)
+            // 3. AI messages that finished streaming
+            setDisplayedContent(content);
+        }
+    }, [content, isStreaming, role, onStreamingComplete]);
 
     return (
         <div className={`message-wrapper ${role} message-enter`}>
@@ -28,8 +62,11 @@ const ChatMessage = ({ message }) => {
             )}
 
             <div className="message-content">
-                <div className="message-bubble">
-                    {content}
+                <div className={`message-bubble ${role === 'ai' && isStreaming ? 'streaming' : ''}`}>
+                    {displayedContent}
+                    {role === 'ai' && isStreaming && displayedContent.length < content.length && (
+                        <span className="cursor">|</span>
+                    )}
                 </div>
                 <div className="message-time">{timestamp}</div>
             </div>
