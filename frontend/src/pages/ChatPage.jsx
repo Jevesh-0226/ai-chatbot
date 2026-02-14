@@ -102,6 +102,32 @@ const ChatPage = () => {
         setSidebarOpen(false); // Close mobile sidebar
     };
 
+    const deleteChat = (id, e) => {
+        if (e) e.stopPropagation();
+
+        // Calculate next active chat before updating state
+        let nextActiveId = activeChatId;
+
+        // Filter out the deleted chat
+        const updatedChats = chats.filter(chat => chat.id !== id);
+
+        // If the *active* chat is being deleted, pick a new one
+        if (id === activeChatId) {
+            nextActiveId = updatedChats.length > 0 ? updatedChats[0].id : null;
+        }
+
+        setChats(updatedChats);
+
+        // Update active ID
+        if (updatedChats.length === 0) {
+            // If no chats left, create a new one immediately
+            // We use setTimeout to allow state update to process first/avoid conflicts
+            setTimeout(createNewChat, 0);
+        } else if (id === activeChatId) {
+            setActiveChatId(nextActiveId);
+        }
+    };
+
     const clearCurrentChat = () => {
         setChats(prev => prev.map(chat =>
             chat.id === activeChatId ? { ...chat, messages: [] } : chat
@@ -202,6 +228,7 @@ const ChatPage = () => {
                 activeChatId={activeChatId}
                 onSelectChat={handleSelectChat}
                 onNewChat={createNewChat}
+                onDeleteChat={deleteChat}
                 isOpen={sidebarOpen}
                 onClose={() => setSidebarOpen(false)}
                 theme={theme}
