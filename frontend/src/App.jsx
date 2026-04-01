@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import './App.css';
 
 function App() {
@@ -38,8 +42,17 @@ function App() {
     setInput('');
     setIsLoading(true);
 
+    // Initial AI message placeholder
+    const aiMessagePlaceholder = {
+      role: 'ai',
+      content: '',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    
+    setMessages(prev => [...prev, aiMessagePlaceholder]);
+
     try {
-      const response = await fetch('https://ai-chatbot-0l8g.onrender.com/api/chat', {
+      const response = await fetch('http://localhost:8000/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -49,27 +62,35 @@ function App() {
       });
 
       if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({ detail: 'API Error' }));
-        throw new Error(errorBody.detail || 'API Error');
+        throw new Error('API Error');
       }
 
-      const data = await response.json();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let fullResponse = '';
 
-      const aiMessage = {
-        role: 'ai',
-        content: data.response,
-        timestamp: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        fullResponse += chunk;
+        
+        // Update the last message in real-time
+        setMessages(prev => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1].content = fullResponse;
+          return newMessages;
+        });
+      }
 
-      // Simple typewriter simulation or just set message
-      setMessages(prev => [...prev, aiMessage]);
     } catch (error) {
       console.error('Error:', error);
-      setMessages(prev => [...prev, {
-        role: 'ai',
-        content: `Error: ${error.message}. Please check your backend terminal for error logs and verify your API key.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }]);
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1].content = `Error: ${error.message}. Please verify your connection.`;
+        return newMessages;
+      });
     } finally {
       setIsLoading(false);
     }
@@ -85,7 +106,7 @@ function App() {
         <div className="header-info">
           <div className="avatar-circle">AI</div>
           <div>
-            <h3>Gemini Assistant</h3>
+            <h3>Groq Assistant</h3>
             <span style={{ fontSize: '0.8rem', color: '#10b981' }}>● Online</span>
           </div>
         </div>
@@ -103,21 +124,43 @@ function App() {
         {messages.length === 0 ? (
           <div className="welcome-screen">
             <div className="avatar-circle" style={{ width: 80, height: 80, fontSize: '2rem', marginBottom: 20 }}>AI</div>
-            <h1>Hello, I'm Gemini.</h1>
-            <p>How can I help you today? I can help you with writing, learning, or just chat about anything.</p>
+            <h1>Hello, I'm Llama.</h1>
+            <p>I'm now upgraded with streaming functionality! How can I help you today?</p>
           </div>
         ) : (
           messages.map((msg, index) => (
             <div key={index} className={`message-wrapper ${msg.role} message-enter`}>
               <div className="message-bubble">
-                {msg.content}
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    code({node, inline, className, children, ...props}) {
+                      const match = /language-(\w+)/.exec(className || '')
+                      return !inline && match ? (
+                        <SyntaxHighlighter
+                          children={String(children).replace(/\n$/, '')}
+                          style={atomDark}
+                          language={match[1]}
+                          PreTag="div"
+                          {...props}
+                        />
+                      ) : (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      )
+                    }
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
               </div>
               <div className="message-time">{msg.timestamp}</div>
             </div>
           ))
         )}
 
-        {isLoading && (
+        {isLoading && messages[messages.length-1]?.content === '' && (
           <div className="message-wrapper ai message-enter">
             <div className="message-bubble" style={{ padding: '8px 12px' }}>
               <div className="typing">

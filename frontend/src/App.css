@@ -65,7 +65,54 @@ body {
   flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--glass-border);
-  transition: all 0.3s ease;
+  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Markdown Specific Adjustments */
+.message-bubble p {
+  margin: 0 0 10px 0;
+}
+
+.message-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.message-bubble ul, .message-bubble ol {
+  margin: 5px 0 10px 20px;
+}
+
+.message-bubble li {
+  margin-bottom: 5px;
+}
+
+.message-bubble code {
+  background: rgba(0,0,0,0.1);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.9em;
+}
+
+.message-bubble pre {
+  margin: 10px 0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.message-bubble table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+}
+
+.message-bubble th, .message-bubble td {
+  border: 1px solid var(--border-light);
+  padding: 8px;
+  text-align: left;
+}
+
+.message-bubble th {
+  background: var(--bg-secondary);
 }
 
 .chat-header {
