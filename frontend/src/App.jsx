@@ -5,6 +5,10 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import './App.css';
 
+/**
+ * App Component
+ * Root component that renders the chat interface
+ */
 function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
