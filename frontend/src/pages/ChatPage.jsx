@@ -161,7 +161,11 @@ const ChatPage = () => {
         setIsLoading(true);
 
         try {
-            const response = await fetch('https://ai-chatbot-0l8g.onrender.com/api/chat', {
+            // Use environment variable for production, or relative path for dev (which uses Vite proxy)
+            const apiUrl = import.meta.env.VITE_API_URL;
+            const chatEndpoint = apiUrl ? `${apiUrl}/api/chat` : '/api/chat';
+            
+            const response = await fetch(chatEndpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -173,16 +177,41 @@ const ChatPage = () => {
                 })
             });
 
-            if (!response.ok) throw new Error('API Error');
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Backend error:', errorText);
+                throw new Error(`API Error: ${response.status}`);
+            }
 
-            const data = await response.json();
+            const responseText = await response.text();
+            console.log('===== RESPONSE DEBUG =====');
+            console.log('Raw response text:', responseText);
+            console.log('Text length:', responseText.length);
+            
+            let data = JSON.parse(responseText);
+            
+            console.log('Parsed JSON object keys:', Object.keys(data));
+            console.log('Full parsed object:', JSON.stringify(data, null, 2));
+            
+            const actualMessage = data.response;
+            console.log('EXTRACTED MESSAGE (data.response):', actualMessage);
+            console.log('MESSAGE TYPE:', typeof actualMessage);
+            console.log('MESSAGE LENGTH:', actualMessage ? actualMessage.length : 'NULL');
+            console.log('===== END DEBUG =====');
+
+            if (!actualMessage) {
+                throw new Error('Response field missing or empty from API');
+            }
 
             const aiMessage = {
                 role: 'ai',
-                content: data.response,
+                content: actualMessage,
                 timestamp: new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                isStreaming: true // Enable streaming effect
+                isStreaming: true
             };
+            
+            console.log('AI Message object about to be stored:', aiMessage);
+            console.log('Content in aiMessage:', aiMessage.content);
 
             // Add AI message
             setChats(prev => prev.map(chat => {
@@ -212,10 +241,10 @@ const ChatPage = () => {
             }));
 
         } catch (error) {
-            console.error(error);
+            console.error('Chat request error:', error);
             const errorMessage = {
                 role: 'ai',
-                content: "Sorry, I couldn't reach the server. Please try again.",
+                content: error.message || "Sorry, I couldn't reach the server. Please check your connection and try again.",
                 timestamp: new Date().toLocaleTimeString(),
                 isStreaming: false
             };

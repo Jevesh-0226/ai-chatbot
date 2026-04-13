@@ -7,6 +7,14 @@ import React, { useState, useEffect, useRef } from 'react';
  */
 const ChatMessage = ({ message }) => {
     const { role, content, timestamp, isStreaming } = message;
+    
+    // DEBUG: Log what we receive
+    if (role === 'ai') {
+        console.log('ChatMessage AI received - content:', content);
+        console.log('Content type:', typeof content);
+        console.log('Content length:', content.length);
+    }
+    
     const [displayedContent, setDisplayedContent] = useState('');
     // Track typing status locally to control cursor visibility manually
     const [isTyping, setIsTyping] = useState(false);

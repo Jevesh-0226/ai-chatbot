@@ -56,12 +56,18 @@ function App() {
     setMessages(prev => [...prev, aiMessagePlaceholder]);
 
     try {
-      const response = await fetch('/api/chat', {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      const chatEndpoint = apiUrl ? `${apiUrl}/api/chat` : '/api/chat';
+      
+      const response = await fetch(chatEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: input,
-          history: messages.map(msg => ({ role: msg.role === 'ai' ? 'model' : 'user', content: msg.content }))
+          history: messages.slice(0, -1).map(msg => ({ // Exclude placeholder
+            role: msg.role === 'ai' ? 'model' : 'user', 
+            content: msg.content 
+          }))
         })
       });
 
@@ -69,24 +75,19 @@ function App() {
         throw new Error('API Error');
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let fullResponse = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        const chunk = decoder.decode(value, { stream: true });
-        fullResponse += chunk;
-        
-        // Update the last message in real-time
-        setMessages(prev => {
-          const newMessages = [...prev];
-          newMessages[newMessages.length - 1].content = fullResponse;
-          return newMessages;
-        });
+      // Parse JSON response (not streaming)
+      const data = await response.json();
+      
+      if (!data.response) {
+        throw new Error('Invalid response from server');
       }
+
+      // Update the placeholder message with actual response
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1].content = data.response;
+        return newMessages;
+      });
 
     } catch (error) {
       console.error('Error:', error);
